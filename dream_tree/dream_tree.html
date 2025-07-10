@@ -47,6 +47,139 @@
     const leafImg = new Image();
     leafImg.src = 'leaf.png';
 
+    let mouse = { x: -9999, y: -9999 };
+    canvas.addEventListener("mousemove", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+    });
+
+    const starParticles = [];
+
+    class LeafFaller {
+      constructor(trianglePoints, despawnY, leafImg, config = {}) {
+        this.triangle = trianglePoints;
+        this.despawnY = despawnY;
+        this.leaves = [];
+        this.leafImg = leafImg;
+
+        this.spawnRate = config.spawnRate ?? 0.03;
+        this.sizeMin = config.sizeMin ?? 10;
+        this.sizeMax = config.sizeMax ?? 20;
+        this.speedMin = config.speedMin ?? 0.5;
+        this.speedMax = config.speedMax ?? 1.2;
+        this.rotationSpeedMax = config.rotationSpeedMax ?? 0.01;
+        this.fadeOffset = config.fadeOffset ?? 100;
+        this.flipChance = config.flipChance ?? 0.5;
+      }
+
+      randomPointInTriangle([A, B, C]) {
+        let r1 = Math.random(), r2 = Math.random();
+        if (r1 + r2 > 1) { r1 = 1 - r1; r2 = 1 - r2; }
+        return {
+          x: A.x + r1 * (B.x - A.x) + r2 * (C.x - A.x),
+          y: A.y + r1 * (B.y - A.y) + r2 * (C.y - A.y)
+        };
+      }
+
+      drawSpawnTriangle(ctx) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(255, 200, 0, 0.5)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(this.triangle[0].x, this.triangle[0].y);
+        ctx.lineTo(this.triangle[1].x, this.triangle[1].y);
+        ctx.lineTo(this.triangle[2].x, this.triangle[2].y);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+
+      drawDespawnLine(ctx) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(255, 0, 0, 0.3)";
+        ctx.beginPath();
+        ctx.moveTo(0, this.despawnY);
+        ctx.lineTo(ctx.canvas.width, this.despawnY);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+
+
+      spawnLeaf() {
+        if (Math.random() < this.spawnRate) {
+          const pos = this.randomPointInTriangle(this.triangle);
+          this.leaves.push({
+            x: pos.x,
+            y: pos.y,
+            vx: 0,
+            vy: 0,
+            angle: Math.random() * Math.PI * 2,
+            speed: Math.random() * (this.speedMax - this.speedMin) + this.speedMin,
+            opacity: 0,
+            flash: true,
+            rotation: Math.random() * Math.PI * 2,
+            rotationSpeed: (Math.random() - 0.5) * this.rotationSpeedMax * 2,
+            flipped: Math.random() < this.flipChance,
+            size: Math.random() * (this.sizeMax - this.sizeMin) + this.sizeMin
+          });
+        }
+      }
+
+
+      updateAndDraw(ctx) {
+        this.spawnLeaf();
+
+        for (let leaf of this.leaves) {
+          const dx = leaf.x - mouse.x;
+          const dy = leaf.y - mouse.y;
+          const dist = Math.hypot(dx, dy);
+
+          if (dist < 100) {
+            const force = (100 - dist) / 100;
+            leaf.vx += (dx / dist) * force * 0.5;
+            leaf.vy += (dy / dist) * force * 0.2;
+          }
+
+          leaf.vx *= 0.95;
+          leaf.vy *= 0.95;
+
+          leaf.x += leaf.vx + Math.sin(leaf.angle) * 0.5;
+          leaf.y += leaf.vy + leaf.speed;
+          leaf.angle += 0.01;
+
+          if (leaf.flash) {
+            leaf.opacity += 0.05;
+            if (leaf.opacity >= 1) {
+              leaf.opacity = 1;
+              leaf.flash = false;
+            }
+          } else {
+            let fadeStart = this.despawnY;
+            leaf.opacity = 1 - Math.min(1, (leaf.y - fadeStart) / this.fadeOffset);
+          }
+
+          leaf.rotation += leaf.rotationSpeed * Math.random() * 20;
+        }
+
+        this.leaves = this.leaves.filter(leaf => leaf.y <= this.despawnY + this.fadeOffset && leaf.opacity > 0);
+
+        for (let leaf of this.leaves) {
+          ctx.save();
+          ctx.translate(leaf.x, leaf.y);
+          ctx.rotate(leaf.rotation);
+          if (leaf.flipped) ctx.scale(-1, 1);
+
+          ctx.globalAlpha = leaf.opacity;
+          ctx.drawImage(this.leafImg, -leaf.size / 2, -leaf.size / 2, leaf.size, leaf.size);
+          ctx.globalAlpha = 1;
+          ctx.restore();
+        }
+      }
+    }
+
 
     let width = window.innerWidth;
     let height = window.innerHeight;
@@ -63,7 +196,7 @@
     // Flickering Stars
     const starColors = ['#88ccff', '#ff88cc', '#ddaaff', '#ffcc88', '#ffffff', '#cceeff'];
 
-    const stars = Array.from({ length: 200 }, () => {
+    const stars = Array.from({ length: 100 }, () => {
       const xZone = Math.random();
       const x = xZone < 0.875
         ? Math.random() * width * 0.53
@@ -100,31 +233,64 @@
       return `rgb(${r},${g},${bl})`;
     }
 
-
-
-    // Falling Leaves
-    const leaves = Array.from({ length: 120 }, () => ({
-      x: width * 0.53 + Math.random() * width * 0.32,
-      y: Math.random() * height * 0.4,
-      speed: Math.random() * 0.3 + 0.1,
-      size: Math.random() * 10 + 5,
-      sway: Math.random() * 1.3 + 5,
-      angle: Math.random() * Math.PI * 2,
-      opacity: 0,
-      flash: true,
-      rotation: Math.random() * Math.PI * 2,
-      rotationSpeed: (Math.random() - 0.5) * 0.01,
-      flipped: Math.random() > 0.5
-    }));
     //fireflies
-    const fireflies = Array.from({ length: 100 }, () => ({
+    const fireflies = Array.from({ length: 200 }, () => ({
       x: Math.random() * width,
       y: height * 0.7 + Math.random() * height * 0.3,
       radius: Math.random() * 1.5 + 0.5,
       alpha: 0.5 + Math.random() * 1.3,
       speed: 0.2 + Math.random() * 0.01,
-      pulse: Math.random() * Math.PI * 5
+      pulse: Math.random() * Math.PI * 5,
+      vx: 0,
+      vy: 0,
+      direction: Math.random() > 0.5 ? 1 : -1
     }));
+
+    function applyInteractivityToStars(stars) {
+      for (let star of stars) {
+        const dx = star.x - mouse.x;
+        const dy = star.y - mouse.y;
+        const dist = Math.hypot(dx, dy);
+
+        star.pulseTime = (star.pulseTime || 0) + 0.05;
+        const pulse = 0.5 + 0.5 * Math.sin(star.pulseTime);
+
+        let glowIntensity = 0;
+        if (dist < 150) {
+          glowIntensity = (150 - dist) / 150;
+        }
+
+        star.glowAlpha = pulse * glowIntensity;
+      }
+    }
+
+    function applyInteractivityToFireflies(fireflies) {
+      for (let f of fireflies) {
+        const dx = mouse.x - f.x;
+        const dy = mouse.y - f.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < 120) {
+          const angle = Math.atan2(dy, dx);
+          const orbitSpeed = 0.002;
+          const orbitStrength = (120 - dist) / 120;
+
+          const offsetAngle = angle + f.direction * Math.PI / 2;
+
+          f.vx += Math.cos(offsetAngle) * orbitSpeed * orbitStrength * 100;
+          f.vy += Math.sin(offsetAngle) * orbitSpeed * orbitStrength * 100;
+
+          f.vx += dx * 0.0005;
+          f.vy += dy * 0.0005;
+        }
+
+        f.x += f.vx;
+        f.y += f.vy;
+
+        f.vx *= 0.95;
+        f.vy *= 0.95;
+      }
+    }
 
 
     const shootingStar = {
@@ -144,28 +310,128 @@
       shootingStar.vy = 2 + Math.random() * 2;
       shootingStar.alpha = 1;
 
-      // Disable after 1.5 seconds
       setTimeout(() => {
         shootingStar.active = false;
         shootingStar.alpha = 0;
 
-        // Schedule next one randomly after 10–30 seconds
         setTimeout(launchShootingStar, 10000 + Math.random() * 20000);
       }, 1500);
     }
-
-    // Initial launch timer
     setTimeout(launchShootingStar, 5000 + Math.random() * 10000);
+
+
+    /* reference for tree config
+    this.spawnRate = config.spawnRate ?? 0.03;
+        this.sizeMin = config.sizeMin ?? 10;
+        this.sizeMax = config.sizeMax ?? 20;
+        this.speedMin = config.speedMin ?? 0.5;
+        this.speedMax = config.speedMax ?? 1.2;
+        this.rotationSpeedMax = config.rotationSpeedMax ?? 0.01;
+        this.fadeOffset = config.fadeOffset ?? 100;
+        this.flipChance = config.flipChance ?? 0.5;
+    */
+
+    const motherTree = new LeafFaller(
+      [{ x: width * 0.55, y: height * 0.27 }, { x: width * 0.70, y: height * 0.12 }, { x: width * 0.84, y: height * 0.27 }], // triangle
+      height * 0.68,
+      leafImg,
+      {
+        speedMax: 0.10,
+        speedMin: 0.5,
+        spawnRate: 0.03,
+        sizeMax: 10,
+        sizeMin: 5
+      }
+    );
+
+    const tree1 = new LeafFaller(
+      [{ x: width * 0.065, y: height * 0.72 }, { x: width * 0.11, y: height * 0.60 }, { x: width * 0.165, y: height * 0.72 }], // triangle
+      height * 0.85,
+      leafImg,
+      {
+        speedMax: 0.5,
+        speedMin: 0.25,
+        spawnRate: 0.015,
+        sizeMax: 10,
+        sizeMin: 5,
+        fadeOffset: 200
+      }
+    );
+
+    const tree2 = new LeafFaller(
+      [{ x: width * 0.87, y: height * 0.72 }, { x: width * 0.92, y: height * 0.60 }, { x: width * 0.97, y: height * 0.72 }], // triangle
+      height * 0.87,
+      leafImg,
+      {
+        speedMax: 0.5,
+        speedMin: 0.25,
+        spawnRate: 0.015,
+        sizeMax: 10,
+        sizeMin: 5,
+        fadeOffset: 200
+      }
+    );
+
+    const tree3 = new LeafFaller(
+      [{ x: width * 0.265, y: height * 0.80 }, { x: width * 0.30, y: height * 0.73 }, { x: width * 0.32, y: height * 0.80 }], // triangle
+      height * 0.9,
+      leafImg,
+      {
+        speedMax: 0.25,
+        speedMin: 0.125,
+        spawnRate: 0.008,
+        sizeMax: 6,
+        sizeMin: 3,
+        fadeOffset: 400
+      }
+    );
+
+    const tree4 = new LeafFaller(
+      [{ x: width * 0.565, y: height * 0.80 }, { x: width * 0.595, y: height * 0.73 }, { x: width * 0.620, y: height * 0.80 }], // triangle
+      height * 0.94,
+      leafImg,
+      {
+        speedMax: 0.25,
+        speedMin: 0.125,
+        spawnRate: 0.008,
+        sizeMax: 6,
+        sizeMin: 3,
+        fadeOffset: 400
+      }
+    );
 
     function draw() {
       ctx.clearRect(0, 0, width, height);
 
-      // Draw stars
+      applyInteractivityToStars(stars);
+      applyInteractivityToFireflies(fireflies);
+
       for (let star of stars) {
+
+        star.pulseTime = (star.pulseTime || 0) + 0.05;
+        const pulse = 0.5 + 0.5 * Math.sin(star.pulseTime);
+        const dx = star.x - mouse.x;
+        const dy = star.y - mouse.y;
+        const dist = Math.hypot(dx, dy);
+        let glowIntensity = dist < 150 ? (150 - dist) / 150 : 0;
+        star.glowAlpha = pulse * glowIntensity;
+
+        if (star.glowAlpha > 0) {
+          const glowRadius = star.radius * 6;
+          const gradient = ctx.createRadialGradient(star.x, star.y, 0, star.x, star.y, glowRadius);
+          gradient.addColorStop(0, lerpColor(star.currentColor, star.targetColor, star.colorTransition).replace('rgb', 'rgba').replace(')', `,${star.glowAlpha})`));
+          gradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+          ctx.fillStyle = gradient;
+          ctx.globalAlpha = star.glowAlpha;
+          ctx.beginPath();
+          ctx.arc(star.x, star.y, glowRadius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
         star.alpha += (Math.random() > 0.5 ? 1 : -1) * star.flicker;
         star.alpha = Math.max(0.2, Math.min(1, star.alpha));
 
-        // Burst logic
         star.burstTimer -= 1;
         let burstGlow = 0;
         if (star.burstTimer <= 0) {
@@ -183,6 +449,19 @@
 
         const flickerColor = lerpColor(star.currentColor, star.targetColor, star.colorTransition);
 
+        if (glowIntensity > 0.8 && Math.random() < 0.06) {
+          starParticles.push({
+            x: star.x,
+            y: star.y,
+            angle: Math.random() * Math.PI * 2,
+            radiusFromMouse: 20 + Math.random() * 30,
+            life: 1,
+            sourceX: star.x,
+            sourceY: star.y,
+            color: flickerColor
+          });
+        }
+
         ctx.beginPath();
         ctx.globalAlpha = star.alpha + burstGlow;
         ctx.fillStyle = burstGlow ? star.burstColor : flickerColor;
@@ -191,64 +470,65 @@
       }
       ctx.globalAlpha = 1;
 
-      // Draw leaves
-      for (let leaf of leaves) {
-        leaf.y += leaf.speed;
-        leaf.x += Math.sin(leaf.angle) * 0.5;
-        leaf.angle += 0.01;
+      for (let i = starParticles.length - 1; i >= 0; i--) {
+        const p = starParticles[i];
+        p.angle += 0.05;
+        p.radiusFromMouse += 0.4;
 
-        if (leaf.y > height * 0.85) {
-          leaf.y = 100;
-          leaf.x = width * 0.53 + Math.random() * width * 0.32;
-          leaf.opacity = 0;
-          leaf.flash = true;
-          leaf.rotation = Math.random() * Math.PI * 2;
-          leaf.rotationSpeed = (Math.random() - 0.5) * 0.01;
-          leaf.flipped = Math.random() > 0.5;
+        const dx = p.x - p.sourceX;
+        const dy = p.y - p.sourceY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (!p.broken && dist > 100) {
+          p.broken = true;
+          const angle = Math.atan2(p.y - mouse.y, p.x - mouse.x);
+          p.vx = Math.cos(angle) * 2;
+          p.vy = Math.sin(angle) * 2;
         }
 
-        // Animate fade-in flash
-        if (leaf.flash) {
-          leaf.opacity += 0.05;
-          if (leaf.opacity >= 1) {
-            leaf.opacity = 1;
-            leaf.flash = false;
-          }
+        if (!p.broken) {
+          p.x = mouse.x + Math.cos(p.angle) * p.radiusFromMouse;
+          p.y = mouse.y + Math.sin(p.angle) * p.radiusFromMouse;
         } else {
-          leaf.opacity = 1 - Math.min(1, leaf.y / (height * 0.85));
+          p.x += p.vx;
+          p.y += p.vy;
         }
 
-        leaf.rotation += leaf.rotationSpeed;
+        p.life -= 0.01;
 
-        ctx.save();
-        ctx.translate(leaf.x, leaf.y);
-        ctx.rotate(leaf.rotation);
+        const alpha = Math.max(0, p.life);
 
-        // Flip horizontally if needed
-        if (leaf.flipped) {
-          ctx.scale(-1, 1);
+
+        ctx.beginPath();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
+        ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (alpha <= 0) {
+          starParticles.splice(i, 1);
         }
-
-        ctx.globalAlpha = leaf.opacity;
-        ctx.drawImage(leafImg, -leaf.size / 2, -leaf.size / 2, leaf.size, leaf.size);
-        ctx.globalAlpha = 1;
-        ctx.restore();
       }
+      ctx.globalAlpha = 1;
 
-      // Fireflies
       for (let f of fireflies) {
         f.y -= f.speed;
         f.pulse += 0.05;
-        const flicker = 0.3 + Math.sin(f.pulse) * 0.3;
+        const distance = Math.hypot(mouse.x - f.x, mouse.y - f.y);
+        const proximityGlow = distance < 120 ? (1 - distance / 120) : 0;
+        const flicker = 0.3 + Math.sin(f.pulse) * 0.3 + proximityGlow * 0.5;
+
+        ctx.globalAlpha = f.alpha * flicker;
+
 
         ctx.beginPath();
         ctx.globalAlpha = f.alpha * flicker;
         ctx.fillStyle = '#88ff88';
         ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
+
         ctx.fill();
 
         if (f.y < height * 0.7) {
-          // Reset to bottom
           f.y = height * 0.7 + Math.random() * height * 0.3;
           f.x = Math.random() * width;
           f.pulse = Math.random() * Math.PI * 5;
@@ -272,9 +552,19 @@
         ctx.globalAlpha = 1;
       }
 
+      motherTree.updateAndDraw(ctx);
+      tree1.updateAndDraw(ctx);
+      tree2.updateAndDraw(ctx);
+      tree3.updateAndDraw(ctx);
+      tree4.updateAndDraw(ctx);
+      //debug tree location
+      /*
+      tree4.drawSpawnTriangle(ctx);
+      tree4.drawDespawnLine(ctx);
+      */
       requestAnimationFrame(draw);
     }
-
+    
     draw();
   </script>
 </body>

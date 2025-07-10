@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dream Tree Wallpaper</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    body {
+      background: #000;
+    }
+
+    #bg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+  </style>
+</head>
+
+<body>
+  <img id="bg" src="bg.png" alt="Background" />
+  <canvas id="overlay"></canvas>
+
+  <script>
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
+
+    const leafImg = new Image();
+    leafImg.src = 'leaf.png';
+
+
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+
+    window.addEventListener('resize', () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+    });
+
+    // Flickering Stars
+    const starColors = ['#88ccff', '#ff88cc', '#ddaaff', '#ffcc88', '#ffffff', '#cceeff'];
+
+    const stars = Array.from({ length: 200 }, () => {
+      const xZone = Math.random();
+      const x = xZone < 0.875
+        ? Math.random() * width * 0.53
+        : width * 0.85 + Math.random() * width * 0.15;
+
+      return {
+        x,
+        y: Math.random() * height * 0.5,
+        radius: Math.random() * 1.5 + 0.8,
+        alpha: Math.random() * 1.5,
+        flicker: (Math.random() * 0.02) + 0.05,
+        burstTimer: Math.random() * 300,
+        burstColor: 'white',
+        currentColor: '#ffffff',
+        targetColor: starColors[Math.floor(Math.random() * starColors.length)],
+        colorTransition: Math.random()
+      };
+    });
+
+    function lerpColor(a, b, t) {
+      const parseHex = (hex) => {
+        if (hex.length === 4) {
+          return hex.match(/[a-f\d]/gi).map(c => parseInt(c + c, 16));
+        } else {
+          return hex.match(/[a-f\d]{2}/gi).map(c => parseInt(c, 16));
+        }
+      };
+
+      const [r1, g1, b1] = parseHex(a);
+      const [r2, g2, b2] = parseHex(b);
+      const r = Math.round(r1 + (r2 - r1) * t);
+      const g = Math.round(g1 + (g2 - g1) * t);
+      const bl = Math.round(b1 + (b2 - b1) * t);
+      return `rgb(${r},${g},${bl})`;
+    }
+
+
+
+    // Falling Leaves
+    const leaves = Array.from({ length: 120 }, () => ({
+      x: width * 0.53 + Math.random() * width * 0.32,
+      y: Math.random() * height * 0.4,
+      speed: Math.random() * 0.3 + 0.1,
+      size: Math.random() * 10 + 5,
+      sway: Math.random() * 1.3 + 5,
+      angle: Math.random() * Math.PI * 2,
+      opacity: 0,
+      flash: true,
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.01,
+      flipped: Math.random() > 0.5
+    }));
+    //fireflies
+    const fireflies = Array.from({ length: 100 }, () => ({
+      x: Math.random() * width,
+      y: height * 0.7 + Math.random() * height * 0.3,
+      radius: Math.random() * 1.5 + 0.5,
+      alpha: 0.5 + Math.random() * 1.3,
+      speed: 0.2 + Math.random() * 0.01,
+      pulse: Math.random() * Math.PI * 5
+    }));
+
+
+    const shootingStar = {
+      active: false,
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      alpha: 0
+    };
+
+    function launchShootingStar() {
+      shootingStar.active = true;
+      shootingStar.x = Math.random() * width * 0.5;
+      shootingStar.y = Math.random() * height * 0.5;
+      shootingStar.vx = 6 + Math.random() * 4;
+      shootingStar.vy = 2 + Math.random() * 2;
+      shootingStar.alpha = 1;
+
+      // Disable after 1.5 seconds
+      setTimeout(() => {
+        shootingStar.active = false;
+        shootingStar.alpha = 0;
+
+        // Schedule next one randomly after 10–30 seconds
+        setTimeout(launchShootingStar, 10000 + Math.random() * 20000);
+      }, 1500);
+    }
+
+    // Initial launch timer
+    setTimeout(launchShootingStar, 5000 + Math.random() * 10000);
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+      ctx.imageSmoothingEnabled = true;
+
+      // Draw stars
+      for (let star of stars) {
+        star.alpha += (Math.random() > 0.5 ? 1 : -1) * star.flicker;
+        star.alpha = Math.max(0.2, Math.min(1, star.alpha));
+
+        // Burst logic
+        star.burstTimer -= 1;
+        let burstGlow = 0;
+        if (star.burstTimer <= 0) {
+          burstGlow = 1;
+          star.burstTimer = 200 + Math.random() * 300;
+          star.burstColor = starColors[Math.floor(Math.random() * starColors.length)];
+        }
+
+        star.colorTransition += 0.01;
+        if (star.colorTransition >= 1) {
+          star.currentColor = star.targetColor;
+          star.targetColor = starColors[Math.floor(Math.random() * starColors.length)];
+          star.colorTransition = 0;
+        }
+
+        const flickerColor = lerpColor(star.currentColor, star.targetColor, star.colorTransition);
+
+        ctx.beginPath();
+        ctx.globalAlpha = star.alpha + burstGlow;
+        ctx.fillStyle = burstGlow ? star.burstColor : flickerColor;
+        ctx.arc(star.x, star.y, star.radius + burstGlow * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // Draw leaves
+      for (let leaf of leaves) {
+        leaf.y += leaf.speed;
+        leaf.x += Math.sin(leaf.angle) * 0.5;
+        leaf.angle += 0.01;
+
+        if (leaf.y > height * 0.85) {
+          leaf.y = 100;
+          leaf.x = width * 0.53 + Math.random() * width * 0.32;
+          leaf.opacity = 0;
+          leaf.flash = true;
+          leaf.rotation = Math.random() * Math.PI * 2;
+          leaf.rotationSpeed = (Math.random() - 0.5) * 0.01;
+          leaf.flipped = Math.random() > 0.5;
+        }
+
+        // Animate fade-in flash
+        if (leaf.flash) {
+          leaf.opacity += 0.05;
+          if (leaf.opacity >= 1) {
+            leaf.opacity = 1;
+            leaf.flash = false;
+          }
+        } else {
+          leaf.opacity = 1 - Math.min(1, leaf.y / (height * 0.85));
+        }
+
+        leaf.rotation += leaf.rotationSpeed;
+
+        ctx.save();
+        ctx.translate(leaf.x, leaf.y);
+        ctx.rotate(leaf.rotation);
+
+        // Flip horizontally if needed
+        if (leaf.flipped) {
+          ctx.scale(-1, 1);
+        }
+
+        ctx.globalAlpha = leaf.opacity;
+        ctx.drawImage(leafImg, -leaf.size / 2, -leaf.size / 2, leaf.size, leaf.size);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+
+      // Fireflies
+      for (let f of fireflies) {
+        f.y -= f.speed;
+        f.pulse += 0.05;
+        const flicker = 0.3 + Math.sin(f.pulse) * 0.3;
+
+        ctx.beginPath();
+        ctx.globalAlpha = f.alpha * flicker;
+        ctx.fillStyle = '#88ff88';
+        ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (f.y < height * 0.7) {
+          // Reset to bottom
+          f.y = height * 0.7 + Math.random() * height * 0.3;
+          f.x = Math.random() * width;
+          f.pulse = Math.random() * Math.PI * 5;
+        }
+      }
+      ctx.globalAlpha = 1;
+
+
+      if (shootingStar.active) {
+        shootingStar.x += shootingStar.vx;
+        shootingStar.y += shootingStar.vy;
+        shootingStar.alpha -= 0.01;
+
+        ctx.globalAlpha = Math.max(0, shootingStar.alpha);
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(shootingStar.x, shootingStar.y);
+        ctx.lineTo(shootingStar.x - shootingStar.vx * 4, shootingStar.y - shootingStar.vy * 4);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+    }
+    setInterval(draw, 8);
+  </script>
+</body>
+
+</html>

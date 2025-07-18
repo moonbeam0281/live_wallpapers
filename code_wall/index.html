@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code-Wall</title>
+<style>
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: #0f0f0f;
+    font-family: 'Fira Code', monospace;
+    color: #c0e8ff;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  #bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .code-block {
+    position: absolute;
+    background: #1a1a1a;
+    border: 1px solid #2f2f2f;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: 0 0 10px #00ffe0a0;
+    white-space: pre;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    z-index: 1;
+  }
+
+  .code-block:hover {
+    box-shadow: 0 0 15px #00ffd9;
+  }
+
+  #terminal {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    z-index: 2;
+    background: #000;
+    color: #00ff88;
+    font-size: 13px;
+    padding: 10px 20px;
+    height: 150px;
+    overflow-y: hidden;
+    border-top: 1px solid #222;
+    box-shadow: 0 -2px 10px #00ff8860;
+    white-space: pre;
+    font-family: monospace;
+  }
+
+  #open-settings {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: #1a1a1a;
+    color: #00ffff;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 14px;
+    z-index: 10;
+    cursor: pointer;
+    box-shadow: 0 0 8px #00ffe040;
+    transition: all 0.2s ease;
+  }
+
+  #open-settings:hover {
+    box-shadow: 0 0 12px #00ffd5, inset 0 0 5px #00ffd540;
+  }
+
+  #settings-modal {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #121212;
+    border: 1px solid #333;
+    padding: 20px;
+    border-radius: 10px;
+    z-index: 100;
+    box-shadow: 0 0 30px #00ffe040;
+    width: 300px;
+  }
+
+  #settings-modal h3 {
+    margin-top: 0;
+    color: #00ffff;
+    text-align: center;
+  }
+
+  #settings-modal label {
+    color: #c0e8ff;
+    font-size: 13px;
+    display: block;
+    margin-top: 12px;
+    margin-bottom: 4px;
+  }
+
+  #settings-modal select,
+  #settings-modal input[type="text"] {
+    width: 100%;
+    padding: 6px 10px;
+    border-radius: 5px;
+    border: 1px solid #444;
+    background: #181818;
+    color: #c0e8ff;
+    font-family: 'Fira Code', monospace;
+    font-size: 13px;
+    box-sizing: border-box;
+  }
+
+  #settings-modal button {
+    width: 100%;
+    margin-top: 12px;
+    padding: 6px 10px;
+    background: #1a1a1a;
+    color: #00ffee;
+    border: 1px solid #333;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: 'Fira Code', monospace;
+    font-size: 13px;
+    transition: all 0.2s ease;
+  }
+
+  #settings-modal button:hover {
+    background: #222;
+    box-shadow: 0 0 8px #00ffee88;
+  }
+</style>
+
+</head>
+
+<body>
+  <button id="open-settings" style="position:fixed;top:20px;left:20px;z-index:10;">⚙️</button>
+
+  <div id="settings-modal"
+    style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#1a1a1a; border:1px solid #333; padding:20px; border-radius:10px; z-index:100; box-shadow:0 0 20px #00ffe055;">
+    <h3 style="margin-top:0;color:#c0e8ff;">Settings</h3>
+
+    <label style="color:#c0e8ff;">Language:</label><br />
+    <select id="language-select" style="width:100%; margin-bottom:10px;">
+      <option value="csharp">C#</option>
+      <option value="javascript">JavaScript</option>
+      <option value="python">Python</option>
+    </select>
+
+    <label style="color:#c0e8ff;">Custom Terminal Command:</label><br />
+    <input id="custom-command" type="text" style="width:100%; margin-bottom:10px;"
+      placeholder="Type and press enter..." />
+
+    <button id="refresh-btn" style="width:100%; margin-top:10px;">🔄 Refresh Background</button><br /><br />
+    <button id="close-settings" style="width:100%;">❌ Close</button>
+  </div>
+
+
+  <div id="terminal"></div>
+  <canvas id="bg"></canvas>
+
+  <script>
+    const terminal = document.getElementById('terminal');
+    const langSelect = document.getElementById('language-select');
+    let currentLang = langSelect.value;
+
+    // Modal control
+    const modal = document.getElementById("settings-modal");
+    document.getElementById("open-settings").onclick = () => (modal.style.display = "block");
+    document.getElementById("close-settings").onclick = () => (modal.style.display = "none");
+
+    // Language change
+    langSelect.addEventListener('change', () => {
+      currentLang = langSelect.value;
+      components.forEach(comp => {
+        comp.updateContent();
+        comp.updateSize();
+      });
+    });
+
+    // Terminal command input
+    document.getElementById("custom-command").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const cmd = e.target.value.trim();
+        if (cmd) {
+          termOutput.push("> " + cmd);
+          if (termOutput.length > 10) termOutput.shift();
+          terminal.textContent = termOutput.join("\n");
+          e.target.value = "";
+        }
+      }
+    });
+
+    // Refresh background
+    document.getElementById("refresh-btn").onclick = () => {
+      generatePaths();
+      generateComponents();
+      generateSmartHighways();
+    };
+
+
+    const templates = {
+      systemTime: {
+        csharp: () => `
+class SystemTime {
+  public string Month = "${new Date().toLocaleString('default', { month: 'long' })}";
+  public int Day = ${new Date().getDate()};
+  public int Hour = ${new Date().getHours()};
+  public int Minute = ${new Date().getMinutes()};
+}`.trim(),
+
+        javascript: () => `
+const systemTime = {
+  month: "${new Date().toLocaleString('default', { month: 'long' })}",
+  day: ${new Date().getDate()},
+  hour: ${new Date().getHours()},
+  minute: ${new Date().getMinutes()}
+};`.trim(),
+
+        python: () => `
+class SystemTime:
+  month = "${new Date().toLocaleString('default', { month: 'long' })}"
+  day = ${new Date().getDate()}
+  hour = ${new Date().getHours()}
+  minute = ${new Date().getMinutes()}`.trim()
+      },
+      battery: {
+        csharp: () => `
+class Battery {
+  public int Percentage = ${Math.floor(Math.random() * 100)};
+  public bool Charging = ${Math.random() > 0.5};
+}`.trim(),
+        javascript: () => `
+const battery = {
+  percentage: ${Math.floor(Math.random() * 100)},
+  charging: ${Math.random() > 0.5}
+};`.trim(),
+        python: () => `
+class Battery:
+  percentage = ${Math.floor(Math.random() * 100)}
+  charging = ${Math.random() > 0.5}`.trim()
+      },
+      mood: {
+        csharp: () => `
+class Mood {
+  public string Current = "${["Happy", "Curious", "Sleepy", "Inspired"][Math.floor(Math.random() * 4)]}";
+}`.trim(),
+        javascript: () => `
+const mood = {
+  current: "${["Happy", "Curious", "Sleepy", "Inspired"][Math.floor(Math.random() * 4)]}"
+};`.trim(),
+        python: () => `
+class Mood:
+  current = "${["Happy", "Curious", "Sleepy", "Inspired"][Math.floor(Math.random() * 4)]}"`.trim()
+      }
+    };
+
+    const types = Object.keys(templates);
+    const numBlocks = 12;
+
+    function createCodeBlocks() {
+      for (let i = 0; i < numBlocks; i++) {
+        const type = types[Math.floor(Math.random() * types.length)];
+        const div = document.createElement('div');
+        div.className = 'code-block';
+        div.dataset.type = type;
+        div.style.left = Math.random() * (window.innerWidth - 300) + 'px';
+        div.style.top = Math.random() * (window.innerHeight - 200) + 'px';
+        document.body.appendChild(div);
+        blocks.push(div);
+
+        const updateInterval = Math.random() * 10000 + 6000;
+        setInterval(() => updateBlock(div), updateInterval);
+      }
+    }
+
+    function updateBlock(block) {
+      const type = block.dataset.type;
+      block.textContent = templates[type][currentLang]();
+    }
+
+    langSelect.addEventListener('change', () => {
+      currentLang = langSelect.value;
+      components.forEach(comp => {
+        comp.updateContent();
+        comp.updateSize();
+      });
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+      // Update relevant block if needed
+    });
+
+
+    const commands = [
+      "fetching weather data...",
+      "git pull origin starbeam",
+      "chmod +x ambient_sync.sh",
+      "import sky_particles from 'magic'",
+      "cd /home/angel/dreams && ls -la",
+      "extracting gaming_skills.json",
+      "rendering CodeWall grid...",
+      "analyzing dream fragments...",
+      "npm run dream-loop",
+      "syncing battery status...",
+      "executing run('mood_generator')",
+      "running dota2.exe",
+      "invoking sunstrike...",
+      "loading ''love_manager.cs'' package into heart...",
+      "npm run dev",
+      "git status",
+      "git add .",
+      "git commit -m ''Updating wallpaper projects.''",
+      "sudo rm -rf --no-preserve-root /"
+    ];
+
+    let termOutput = [];
+    function updateTerminal() {
+      const next = "> " + commands[Math.floor(Math.random() * commands.length)];
+      termOutput.push(next);
+      if (termOutput.length > 8) termOutput.shift();
+      terminal.textContent = termOutput.join("\n");
+    }
+
+    setInterval(updateTerminal, 1500);
+
+    // Canvas motherboard
+    const canvas = document.getElementById('bg');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+
+    const paths = [];
+    const gridSize = 80;
+    const pulseSpeed = 0.015;
+
+    class Component {
+      constructor(x, y, type) {
+        this.type = type;
+        this.div = document.createElement('div');
+        this.div.className = 'code-block';
+        this.div.dataset.type = type;
+        //document.body.appendChild(this.div);
+
+        this.updateContent();
+
+        this.x = x;
+        this.y = y;
+        this.div.style.left = this.x + 'px';
+        this.div.style.top = this.y + 'px';
+
+        this.updateSize();
+      }
+
+      updateContent() {
+        this.div.textContent = templates[this.type][currentLang]();
+      }
+
+      updateSize() {
+        const rect = this.div.getBoundingClientRect();
+        this.width = rect.width;
+        this.height = rect.height;
+      }
+
+      draw(ctx) {
+        // Optional visual border or highlight if needed
+      }
+
+      getEdgePorts() {
+        return [
+          { x: this.x, y: this.y + this.height / 2 },
+          { x: this.x + this.width, y: this.y + this.height / 2 },
+          { x: this.x + this.width / 2, y: this.y },
+          { x: this.x + this.width / 2, y: this.y + this.height }
+        ];
+      }
+    }
+
+    function hexToRGBA(hex, alpha) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    class ElectricityAgent {
+      constructor(path) {
+        this.path = path;
+        this.segmentIndex = 0;
+        this.t = 0;
+        this.speed = 0.01 + Math.random() * 0.015;
+
+        const types = ['data', 'error', 'warning', 'energy'];
+        this.type = types[Math.floor(Math.random() * types.length)];
+
+        switch (this.type) {
+          case 'data': this.speed *= 1.2; break;
+          case 'error': this.speed *= 2.0; break;
+          case 'warning': this.speed *= 0.7; break;
+          case 'energy': this.speed *= 1.0; break;
+        }
+
+        this.trail = [];
+        this.maxTrail = 15;
+      }
+
+      update() {
+        if (this.segmentIndex >= this.path.length - 1) return;
+        this.t += this.speed;
+
+        const pos = this.position;
+        if (pos) {
+          this.trail.push({ ...pos, age: 0 });
+          if (this.trail.length > this.maxTrail) this.trail.shift();
+        }
+
+        for (const t of this.trail) t.age += 1;
+
+        if (this.t >= 1) {
+          this.t = 0;
+          this.segmentIndex++;
+        }
+      }
+
+      draw(ctx) {
+        const pos = this.position;
+        if (!pos) return;
+
+        let color = '#00ffee';
+        switch (this.type) {
+          case 'data': color = '#00ffee'; break;
+          case 'error': color = '#ff0040'; break;
+          case 'warning': color = '#ffaa00'; break;
+          case 'energy': color = '#00ff00'; break;
+        }
+
+        // Draw trail
+        for (let i = 0; i < this.trail.length; i++) {
+          const t = this.trail[i];
+          const alpha = 1 - (i / this.trail.length);
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, 2, 0, Math.PI * 2);
+          ctx.fillStyle = hexToRGBA(color, alpha * 0.6);
+          ctx.fill();
+        }
+
+        // Draw agent
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 12;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      isFinished() {
+        return this.segmentIndex >= this.path.length - 1;
+      }
+
+      loopIfPossible() {
+        if (this.segmentIndex >= this.path.length - 1) {
+          // Pick new path
+          const source = Math.random() > 0.4 ? highways : paths;
+          const raw = source[Math.floor(Math.random() * source.length)];
+          if (!raw) return false;
+
+          this.path = Array.isArray(raw) ? raw : [{ x: raw.x, y: raw.y }, ...raw.segments];
+          this.segmentIndex = 0;
+          this.t = 0;
+
+          // Optional: adjust speed slightly for variety
+          this.speed = 0.008 + Math.random() * 0.012;
+
+          // Keep trail
+          this.trail = [];
+          return true;
+        }
+        return false;
+      }
+
+      get position() {
+        if (this.segmentIndex >= this.path.length - 1) return null;
+        const a = this.path[this.segmentIndex];
+        const b = this.path[this.segmentIndex + 1];
+        const x = a.x + (b.x - a.x) * this.t;
+        const y = a.y + (b.y - a.y) * this.t;
+        return { x, y };
+      }
+    }
+
+    const agents = [];
+
+    setInterval(() => {
+      if (agents.length > 50)
+        return;
+      const useHighway = Math.random() > 0.4;
+      const source = useHighway ? highways : paths;
+      const rawPath = source[Math.floor(Math.random() * source.length)];
+
+      if (!rawPath) return;
+
+      const fullPath = useHighway ? rawPath : [{ x: rawPath.x, y: rawPath.y }, ...rawPath.segments];
+      agents.push(new ElectricityAgent(fullPath));
+    }, 150);
+
+
+    function resizeCanvas() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+      generatePaths();
+      generateComponents();
+      generateSmartHighways()
+    }
+
+    function getRandomEdgePoint() {
+      const edge = Math.floor(Math.random() * 4);
+      switch (edge) {
+        case 0: return { x: 0, y: Math.random() * height };         // Left
+        case 1: return { x: width, y: Math.random() * height };      // Right
+        case 2: return { x: Math.random() * width, y: 0 };           // Top
+        case 3: return { x: Math.random() * width, y: height };      // Bottom
+      }
+    }
+
+    function generatePaths() {
+      paths.length = 0;
+      const numPaths = 40;
+
+      for (let i = 0; i < numPaths; i++) {
+        const start = getRandomEdgePoint();
+
+        let target;
+        if (Math.random() < 0.5 && components.length > 0) {
+          const comp = components[Math.floor(Math.random() * components.length)];
+          const ports = comp.getEdgePorts();
+          target = ports[Math.floor(Math.random() * ports.length)];
+        } else {
+          target = getRandomEdgePoint();
+        }
+
+        const path = {
+          x: start.x,
+          y: start.y,
+          segments: [],
+          offset: Math.random()
+        };
+
+        const points = generateLogicPath(start, target);
+        path.segments.push(...points);
+        paths.push(path);
+      }
+    }
+
+    function generateLogicPath(start, end) {
+      const points = [];
+      let currX = start.x;
+      let currY = start.y;
+
+      const steps = Math.floor(Math.random() * 2) + 3;
+
+      for (let i = 0; i < steps - 1; i++) {
+        const dx = end.x - currX;
+        const dy = end.y - currY;
+
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        const signX = Math.sign(dx);
+        const signY = Math.sign(dy);
+
+        const allowDiagonal = Math.abs(absDx - absDy) < 40; // close enough
+        const useDiagonal = allowDiagonal && Math.random() < 0.6;
+
+        if (useDiagonal) {
+          const length = Math.min(absDx, absDy) * (0.4 + Math.random() * 0.4);
+          currX += signX * length;
+          currY += signY * length;
+          points.push({ x: currX, y: currY });
+        } else {
+          const goXFirst = Math.random() > 0.5;
+          if (goXFirst && absDx > 10) {
+            currX += signX * absDx * (0.3 + Math.random() * 0.4);
+            points.push({ x: currX, y: currY });
+          } else if (absDy > 10) {
+            currY += signY * absDy * (0.3 + Math.random() * 0.4);
+            points.push({ x: currX, y: currY });
+          }
+        }
+      }
+
+      // Final cleanup step to ensure end point reached
+      if (currX !== end.x && currY !== end.y) {
+        const dx = end.x - currX;
+        const dy = end.y - currY;
+        const signX = Math.sign(dx);
+        const signY = Math.sign(dy);
+
+        if (Math.abs(dx) === Math.abs(dy)) {
+          // Perfect diagonal finish
+          points.push({ x: end.x, y: end.y });
+        } else {
+          // Clean L shape finish
+          if (currX !== end.x) points.push({ x: end.x, y: currY });
+          if (currY !== end.y) points.push({ x: end.x, y: end.y });
+        }
+      } else if (currX !== end.x || currY !== end.y) {
+        points.push({ x: end.x, y: end.y });
+      }
+
+      return points;
+    }
+
+    const components = [];
+
+    function generateComponents() {
+      // Remove old components and divs
+      for (const comp of components) {
+        if (comp.div && comp.div.remove) {
+          comp.div.remove();
+        }
+      }
+
+      components.length = 0;
+      const blockTypes = Object.keys(templates);
+      const maxTries = 100;
+      const minSpacing = 20;
+
+      for (let i = 0; i < 6; i++) {
+        const type = blockTypes[i % blockTypes.length];
+        let comp, tries = 0;
+
+        do {
+          // Step 1: Create component but don't append yet
+          const x = Math.random() * (width - 300);
+          const y = Math.random() * (height - 200);
+          comp = new Component(x, y, type);
+
+          // Step 2: Append temporarily to measure size
+          document.body.appendChild(comp.div);
+          comp.updateSize();
+
+          tries++;
+
+          // Step 3: Remove div if overlapping
+          if (isOverlapping(comp)) {
+            comp.div.remove();
+          } else {
+            break;
+          }
+
+        } while (tries < maxTries);
+
+        components.push(comp);
+      }
+    }
+
+
+    function isOverlapping(newComp) {
+      for (const existing of components) {
+        const a = newComp;
+        const b = existing;
+
+        const buffer = 20;
+        if (
+          a.x < b.x + b.width + buffer &&
+          a.x + a.width + buffer > b.x &&
+          a.y < b.y + b.height + buffer &&
+          a.y + a.height + buffer > b.y
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    const highways = [];
+
+    function generateSmartHighways() {
+      highways.length = 0;
+
+      const entries = [];
+      for (const comp of components) {
+        entries.push(...comp.getEdgePorts());
+      }
+
+      const numPairs = Math.min(entries.length - 1, 10);
+      for (let i = 0; i < numPairs; i++) {
+        const from = entries[i];
+        const to = entries[i + 1];
+
+        const laneCount = Math.floor(Math.random() * 3) + 2;
+        const spacing = 6;
+
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const vertRatio = Math.random() * 0.4 + 0.3;
+        const horizRatio = Math.random() * 0.4 + 0.3;
+
+        const bendX = from.x + dx * horizRatio;
+        const bendY = from.y + dy * vertRatio;
+
+        for (let j = 0; j < laneCount; j++) {
+          const offset = (j - (laneCount - 1) / 2) * spacing;
+          highways.push([
+            { x: from.x, y: from.y + offset },
+            { x: bendX, y: from.y + offset },
+            { x: bendX, y: to.y + offset },
+            { x: to.x, y: to.y + offset }
+          ]);
+        }
+      }
+
+      //Generate offscreen highways
+      for (let i = 0; i < 3; i++) {
+        const target = entries[Math.floor(Math.random() * entries.length)];
+        const side = Math.random() > 0.5 ? 'left' : 'right';
+        const startX = side === 'left' ? -50 : width + 50;
+        const startY = Math.random() * height;
+
+        const dx = target.x - startX;
+        const dy = target.y - startY;
+        const bendX = startX + dx * 0.4;
+        const bendY = startY + dy * 0.4;
+
+        const laneCount = Math.floor(Math.random() * 3) + 1;
+        for (let j = 0; j < laneCount; j++) {
+          const offset = (j - (laneCount - 1) / 2) * 6;
+          highways.push([
+            { x: startX, y: startY + offset },
+            { x: bendX, y: startY + offset },
+            { x: bendX, y: target.y + offset },
+            { x: target.x, y: target.y + offset }
+          ]);
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.lineWidth = 2;
+      for (const path of paths) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#00ffe055';
+        ctx.moveTo(path.x, path.y);
+        for (const seg of path.segments) {
+          ctx.lineTo(seg.x, seg.y);
+        }
+        ctx.stroke();
+      }
+
+      for (const path of paths) {
+        const total = path.segments.length;
+        let t = (performance.now() * pulseSpeed / 1000 + path.offset) % 1;
+        let index = Math.floor(t * total);
+        let next = path.segments[index];
+        if (!next) continue;
+
+        ctx.beginPath();
+        ctx.arc(next.x, next.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#00ffee';
+        ctx.shadowColor = '#00ffee';
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      for (const comp of components) {
+        comp.draw(ctx);
+      }
+
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#00ffe055';
+
+      for (const path of highways) {
+        ctx.beginPath();
+        ctx.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < path.length; i++) {
+          ctx.lineTo(path[i].x, path[i].y);
+        }
+        ctx.stroke();
+      }
+
+      // Update and draw electricity agents
+      for (const agent of agents) {
+        agent.update();
+        agent.draw(ctx);
+      }
+
+      // Clean up finished agents
+      for (let i = agents.length - 1; i >= 0; i--) {
+        const agent = agents[i];
+        if (!agent.loopIfPossible() && agent.segmentIndex >= agent.path.length - 1) {
+          agents.splice(i, 1); // fallback just in case
+        }
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    requestAnimationFrame(draw);
+  </script>
+</body>
+
+</html>
